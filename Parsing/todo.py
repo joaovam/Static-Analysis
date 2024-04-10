@@ -13,7 +13,7 @@ As an example, the program below sums up the numbers a, b and c:
     l2 = x = add x c
 """
 
-from lang import Env, Inst
+from lang import *
 
 
 def line2env(line: str) -> Env:
@@ -36,7 +36,17 @@ def line2env(line: str) -> Env:
     return env_lang
 
 
-def file2cfg_and_env(lines: list[str]) -> tuple[Env, list[Inst]]:
+def create_Bt(curr, insts):
+    ops = curr.split(" ")
+    b_t = ops[1].strip("\n")
+    if type(insts[int(ops[2])]) != str:
+        inst = Bt(b_t)
+        inst.add_true_next(insts[int(ops[2])])
+    else:
+        inst = create_Bt(insts[int(ops[2])], insts)
+    return inst;
+
+def file2cfg_and_env(lines):
     """
     Builds a control-flow graph representation for the strings stored in
     `lines`. The first string represents the environment. The other strings
@@ -65,7 +75,52 @@ def file2cfg_and_env(lines: list[str]) -> tuple[Env, list[Inst]]:
         >>> interp(prog[0], env).get("x")
         9
     """
-    # TODO: Imlement this method.
+    # TODO: Implement this method.
+
+    #var = add var var
+    #var = Mul var var
+    #var = Lth var var
+    #var = Geq var var
+    #Bt var offset
+
+    operations = {"bt":Bt, "mul":Mul, "lth":Lth, "geq":Geq, "add": Add }
+    
     env = line2env(lines[0])
     insts = []
+
+    lines.pop(0)
+
+    for l in lines:
+        #print("line:", l)
+        ops = l.split(" ")
+        if ops[0] == "bt":
+            #How to deal with jumps
+            insts.append(l)
+
+        else:
+            target = ops[0].strip("\n")
+            op1 = ops[3].strip("\n")
+            op2 = ops[4].strip("\n")
+            inst = operations[ops[2]](target, op1, op2)
+            #print("INST:", inst)
+            insts.append(inst)
+    
+    for i in range(len(insts)):
+        curr = insts[i]
+        #print("CURR0", curr)
+        if type(curr) == str: #it is a BT waiting for connection
+            #print("CURR1", curr)
+            curr = create_Bt(curr, insts)
+            insts[i] = curr
+        #create connections
+        #print("TESTE", type(curr))
+        if i > 0:
+            curr.add_pred(insts[i -1])
+            
+            
+    #env.dump()
+    #print("INSTS", insts)
+
     return (env, insts)
+
+    
