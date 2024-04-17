@@ -26,5 +26,10 @@ if __name__ == "__main__":
     env, program = parser.file2cfg_and_env(lines)
     (env_chaotic, n_chaotic) = chaotic_solver(program)
     (env_worklist, n_worklist) = worklist_solver(program)
+    #for i,e in env_chaotic.items():
+        #if e != env_worklist[i]:
+        #    print(i)
+        #    print(e)
+        #    print(env_worklist[i])
     print(f"Are the environments the same? {env_chaotic == env_worklist}")
-    print(f"Used less than {n_chaotic} iterations? {n_worklist <= n_chaotic}")
+    print(f"Does it iterate less than chaotic-sol? {n_worklist <= n_chaotic}")

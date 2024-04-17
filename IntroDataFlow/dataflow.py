@@ -1,4 +1,4 @@
-from lang import Inst, BinOp, Bt
+from lang import *
 from abc import ABC, abstractmethod
 
 
@@ -21,7 +21,7 @@ class DataFlowEq(ABC):
 
     @classmethod
     @abstractmethod
-    def name(self) -> str:
+    def name(self):
         """
         The name of a data-flow equation is used to retrieve the data-flow
         facts associated with that equation in the environment. For instance,
@@ -37,7 +37,7 @@ class DataFlowEq(ABC):
 
     @classmethod
     @abstractmethod
-    def eval_aux(self, data_flow_env) -> set:
+    def eval_aux(self, data_flow_env):
         """
         This method determines how each concrete equation evaluates itself.
         In a way, this design implements the 'template method' pattern. In other
@@ -48,7 +48,7 @@ class DataFlowEq(ABC):
         """
         raise NotImplementedError
 
-    def eval(self, data_flow_env) -> bool:
+    def eval(self, data_flow_env):
         """
         This method implements the abstract evaluation of a data-flow equation.
         Notice that the actual semantics of this evaluation will be implemented
@@ -225,8 +225,8 @@ class ReachingDefs_IN_Eq(IN_Eq):
         return f"{self.name()}: Union( {succs} )"
 
 
-class LivenessAnalysisIN_Eq(IN_Eq):
-    def eval_aux(self, data_flow_env: dict[str, set]) -> None:
+class LivenessAnalysis_Bin_IN_Eq(IN_Eq):
+    def eval_aux(self, data_flow_env):
         """
         Produces the IN set of liveness analysis. The IN set is given by the
         equation below, considering the instruction `p) v = E`:
@@ -236,11 +236,21 @@ class LivenessAnalysisIN_Eq(IN_Eq):
         Example:
             >>> Inst.next_index = 0
             >>> i0 = Add('x', 'a', 'b')
-            >>> df = LivenessAnalysisIN_Eq(i0)
+            >>> df = LivenessAnalysis_Bin_IN_Eq(i0)
             >>> sorted(df.eval_aux({'OUT_0': {'x'}}))
             ['a', 'b']
         """
         # TODO: implement this method
+        
+        out_set = data_flow_env[name_out(self.inst.ID)]
+
+        #new_set = {(v, p) for (v, p) in out_set if v != self.inst.dst}
+        
+        new_set = { v for v in out_set if v != self.inst.dst}
+
+        
+        #print(new_set)
+        return new_set.union(self.inst.uses())
 
     def __str__(self):
         """
@@ -249,7 +259,7 @@ class LivenessAnalysisIN_Eq(IN_Eq):
         Example:
             >>> Inst.next_index = 0
             >>> add = Add('x', 'a', 'b')
-            >>> df = LivenessAnalysisIN_Eq(add)
+            >>> df = LivenessAnalysis_Bin_IN_Eq(add)
             >>> df.__str__()
             "IN_0: (OUT_0 - {'x'}) + ['a', 'b']"
         """
@@ -257,8 +267,45 @@ class LivenessAnalysisIN_Eq(IN_Eq):
         return f"{self.name()}: {kill_set} + {sorted(self.inst.uses())}"
 
 
+class LivenessAnalysis_Bt_IN_Eq(IN_Eq):
+    def eval_aux(self, data_flow_env):
+        """
+        Produces the IN set of liveness analysis. The IN set is given by the
+        equation below, considering the instruction `p) v = E`:
+
+        IN[p] = uses(E) + (OUT[p] - {v})
+
+        Example:
+            >>> Inst.next_index = 0
+            >>> i0 = Add('x', 'a', 'b')
+            >>> df = LivenessAnalysis_Bt_IN_Eq(i0)
+            >>> sorted(df.eval_aux({'OUT_0': {'x'}}))
+            ['x']
+        """
+        # TODO: implement this method
+        
+        return set(data_flow_env[name_out(self.inst.ID)]).union(self.inst.uses())
+
+        
+
+    def __str__(self):
+        """
+        A string representation of an equation.
+
+        Example:
+            >>> Inst.next_index = 0
+            >>> add = Add('x', 'a', 'b')
+            >>> df = LivenessAnalysis_Bt_IN_Eq(add)
+            >>> df.__str__()
+            "IN_0: (OUT_0 - {'x'}) + ['a', 'b']"
+        """
+        kill_set = f"({name_out(self.inst.ID)} - {self.inst.definition()})"
+        return f"{self.name()}: {kill_set} + {sorted(self.inst.uses())}"
+
+
+
 class LivenessAnalysisOUT_Eq(OUT_Eq):
-    def eval_aux(self, data_flow_env: dict[str, set]) -> None:
+    def eval_aux(self, data_flow_env):
         """
         Computes the join (or meet) operation of the liveness analysis. The
         join of a point `p` is computed in the following way:
@@ -275,6 +322,12 @@ class LivenessAnalysisOUT_Eq(OUT_Eq):
             ['a', 'c', 'd']
         """
         # TODO: implement this method
+        solution = set()
+        for inst in self.inst.nexts:
+            
+            solution = solution.union(data_flow_env[name_in(inst.ID)])
+        return solution
+
 
     def __str__(self):
         """
@@ -316,7 +369,7 @@ def reaching_defs_constraint_gen(insts):
     return in0 + in1 + out
 
 
-def liveness_constraint_gen(insts: list[Inst]) -> list[DataFlowEq]:
+def liveness_constraint_gen(insts):
     """
     Builds a list of liness-analysis equations extracted from the instructions
     in the list `insts`
@@ -332,7 +385,11 @@ def liveness_constraint_gen(insts: list[Inst]) -> list[DataFlowEq]:
         "IN_0: (OUT_0 - {'c'}) + ['a', 'b'] IN_1: (OUT_1 - {'d'}) + ['a', 'c']"
     """
     # TODO: implement this method.
-    return []
+    in0 = [LivenessAnalysis_Bin_IN_Eq(i) for i in insts if isinstance(i, BinOp)]
+    in1 = [LivenessAnalysis_Bt_IN_Eq(i) for i in insts if isinstance(i, Bt)]
+    out = [LivenessAnalysisOUT_Eq(i) for i in insts]
+    return in0 + in1 + out
+    
 
 
 def abstract_interp(equations):

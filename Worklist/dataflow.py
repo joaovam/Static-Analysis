@@ -1,4 +1,4 @@
-from lang import Env, Inst, BinOp, Bt
+from lang import *
 from abc import ABC, abstractmethod
 
 
@@ -250,7 +250,7 @@ class ReachingDefs_IN_Eq(IN_Eq):
             solution = solution.union(data_flow_env[name_out(inst.ID)])
         return solution
 
-    def deps(self) -> list[str]:
+    def deps(self):
         """
         The list of dependencies of this equation. Ex.:
             >>> Inst.next_index = 0
@@ -264,7 +264,25 @@ class ReachingDefs_IN_Eq(IN_Eq):
             ['OUT_0', 'OUT_1']
         """
         # TODO: Implement this method
-        return []
+
+        solution = set()
+        if self.inst.preds:
+            solution.add(name_out(self.inst.preds[-1].ID))
+
+        used_vars = self.inst.uses()
+        for i in self.inst.preds:
+            
+            if len(i.definition().intersection(used_vars)) > 0:
+                
+                solution.add(name_out(i.ID))
+
+        for i in self.inst.nexts:
+            solution.add(name_out(i.ID))
+
+
+
+
+        return solution
 
     def __str__(self):
         """
@@ -334,7 +352,7 @@ def abstract_interp(equations):
     return (env, DataFlowEq.num_evals)
 
 
-def build_dependence_graph(equations) -> dict[str, list[DataFlowEq]]:
+def build_dependence_graph(equations):
     """
     This function builds the dependence graph of equations.
 
@@ -349,11 +367,19 @@ def build_dependence_graph(equations) -> dict[str, list[DataFlowEq]]:
         ['OUT_0']
     """
     # TODO: implement this method
+
     dep_graph = {eq.name(): [] for eq in equations}
+
+    for e in equations:
+        
+        for i in e.deps():
+            
+            dep_graph[i].append(e)
+    
     return dep_graph
 
 
-def abstract_interp_worklist(equations) -> tuple[Env, int]:
+def abstract_interp_worklist(equations):
     """
     This function solves the system of equations using a worklist. Once an
     equation E is evaluated, and the evaluation changes the environment, only
@@ -374,4 +400,16 @@ def abstract_interp_worklist(equations) -> tuple[Env, int]:
 
     DataFlowEq.num_evals = 0
     env = defaultdict(list)
+    dep_graph = build_dependence_graph(equations)
+    
+
+    worklist = equations
+
+    while worklist:
+       curr = worklist.pop() 
+       
+       if curr.eval(env):
+           worklist.extend(dep_graph[curr.name()])
+
+
     return (env, DataFlowEq.num_evals)

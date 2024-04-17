@@ -88,6 +88,11 @@ class Inst(ABC):
         self.nexts.append(next_inst)
         next_inst.preds.append(self)
 
+
+    def add_pred(self, pred_inst):
+        self.preds.append(pred_inst)
+        pred_inst.add_next(self)
+
     @classmethod
     @abstractmethod
     def definition(self):
