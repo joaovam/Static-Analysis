@@ -42,6 +42,7 @@ def create_Bt(curr, insts):
     if type(insts[int(ops[2])]) != str:
         inst = Bt(b_t)
         inst.add_true_next(insts[int(ops[2])])
+        inst.add_next()
     else:
         inst = create_Bt(insts[int(ops[2])], insts)
     return inst;
@@ -111,6 +112,7 @@ def file2cfg_and_env(lines):
         if type(curr) == str: #it is a BT waiting for connection
             #print("CURR1", curr)
             curr = create_Bt(curr, insts)
+            curr.add_next(inst[i+1])
             insts[i] = curr
         #create connections
         #print("TESTE", type(curr))
@@ -123,4 +125,4 @@ def file2cfg_and_env(lines):
 
     return (env, insts)
 
-    
+     # type: ignore

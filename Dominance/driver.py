@@ -23,8 +23,11 @@ if __name__ == "__main__":
         >>> print_instructions(program)
     """
     lang.Inst.next_index = 0
+
     lines = sys.stdin.readlines()
+    
     env, program = parser.file2cfg_and_env(lines)
+    print_instructions(program)
     equations = dataflow.dominance_constraint_gen(program)
     dom_tree = dataflow.abstract_interp(equations)
     for ID in sorted(dom_tree):

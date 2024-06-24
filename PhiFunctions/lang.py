@@ -76,7 +76,10 @@ class Env:
             >>> e.get_from_list(["b", "a"])
             4
         """
-        # TODO: Implement this method
+        for var,value in self.env:
+            if var in vars:
+                return value
+
         return 0
 
     def set(s, var, value):
@@ -251,6 +254,11 @@ class PhiBlock(Inst):
         Each one of these N columns is associated with a 'selector', which is
         the ID of the instruction that leads to that parallel assignment.
 
+        M N
+        v    10 31
+        a0 = a0 a1
+        a1 = a1 a0
+
         Examples:
             >>> a0 = Phi("a0", ["a0", "a1"])
             >>> a1 = Phi("a1", ["a1", "a0"])
@@ -265,10 +273,12 @@ class PhiBlock(Inst):
             ['a0', 'a1']
         """
         self.phis = phis
-        # TODO: implement the rest of this method
-        # here...
-        # self.selectors = ...
-        #########################################
+
+        self.selectors = dict()
+
+        for i in range(len(selector_IDs)):
+            self.selectors[selector_IDs[i]] = i
+        
         super().__init__()
 
     def definition(self):
@@ -299,11 +309,27 @@ class PhiBlock(Inst):
             ['a0', 'a0', 'x', 'y']
         """
         return sum([phi.uses() for phi in self.phis], [])
+    
 
     def eval(self, env: Env, PC: int):
         # TODO: Read all the definitions
         # TODO: Assign all the uses:
-        pass
+
+        p = self.selectors[PC]
+        #print(p)
+
+        vars = self.definition()
+        #print("vars:", vars)
+
+        values = [env.get(x.args[p]) for x in self.phis]
+        #print(values)
+
+        for i in range(len(vars)):
+            #print(vars[i],"=",values[i])
+            env.set(vars[i], values[i])
+
+
+
 
     def __str__(self):
         block_str = "\n".join([str(phi) for phi in self.phis])
@@ -500,15 +526,17 @@ def interp(instruction: Inst, environment: Env, PC=0):
         2
     """
     if instruction:
-        print("----------------------------------------------------------")
-        print(instruction)
-        environment.dump()
+        #print("----------------------------------------------------------")
+        #print(instruction)
+        #environment.dump()
         if isinstance(instruction, PhiBlock):
             # TODO: implement this part:
-            pass
+            instruction.eval(environment,PC)
+            
         else:
             # TODO: implement this part:
-            pass
+            instruction.eval(environment)
+            
         return interp(instruction.get_next(), environment, instruction.ID)
     else:
         return environment
