@@ -94,6 +94,12 @@ class Env:
         for var, value in s.env:
             print(f"{var}: {value}")
 
+    def to_dict(s):
+        d = dict()
+        for var, value in reversed(s.env):
+            d[var] = value 
+        return d 
+
 
 class Inst(ABC):
     """
@@ -211,6 +217,31 @@ class Phi(Inst):
         next_s = f"\n  N: {self.nexts[0].ID if len(self.nexts) > 0 else ''}"
         return inst_s + pred_s + next_s
 
+class Read(Inst):
+    """
+    The Read instruction introduces non-constant values to the program.
+    This blocking instruction requests a numerical input from the user.
+    """
+    def __init__(s, dst):
+        s.dst = dst
+        super().__init__()
+
+    def definition(s):
+        return {s.dst}
+
+    def uses(s):
+        return set()
+
+    def eval(s, env):
+        input_value = input(f'value for {s.dst}: ')
+        env.set(s.dst, int(input_value))
+
+    def __str__(self):
+        inst_s = f"{self.ID}: {self.dst} = INPUT"
+        pred_s = f"\n  P: {', '.join([str(inst.ID) for inst in self.preds])}"
+        next_s = f"\n  N: {self.nexts[0].ID if len(self.nexts) > 0 else ''}"
+        return inst_s + pred_s + next_s
+
 
 class PhiBlock(Inst):
     """
@@ -267,7 +298,6 @@ class PhiBlock(Inst):
         self.phis = phis
         # TODO: implement the rest of this method
         # here...
-        # self.selectors = ...
         #########################################
         super().__init__()
 
@@ -308,7 +338,6 @@ class PhiBlock(Inst):
     def __str__(self):
         block_str = "\n".join([str(phi) for phi in self.phis])
         return f"PHI_BLOCK [\n{block_str}\n]"
-
 
 class BinOp(Inst):
     """
@@ -500,15 +529,10 @@ def interp(instruction: Inst, environment: Env, PC=0):
         2
     """
     if instruction:
-        print("----------------------------------------------------------")
-        print(instruction)
-        environment.dump()
         if isinstance(instruction, PhiBlock):
-            # TODO: implement this part:
-            pass
+            instruction.eval(environment, PC)
         else:
-            # TODO: implement this part:
-            pass
+            instruction.eval(environment)
         return interp(instruction.get_next(), environment, instruction.ID)
     else:
         return environment

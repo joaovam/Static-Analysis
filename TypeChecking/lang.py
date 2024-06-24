@@ -5,11 +5,11 @@ instruction, plus an environment, which is a stack of bindings. Bindings are
 pairs of variable names and values. New bindings are added to the stack
 whenever new variables are defined. Bindings are never removed from the stack.
 In this way, we can inspect the history of state transformations caused by the
-interpretation of a program. The difference between this file and the files of
-same name in the previous lab is the presence of phi-functions. In other words,
-this new language contains two extra instructions: phi-functions and phi-blocks.
-The latter represents the set of phi-functions that exist at the beginning of
-a basic block.
+interpretation of a program.
+
+In contrast to the other files of same name in previous labs, this file contains
+special code to implement a simple type-checking enginee. You must fill up the
+missing parts of this type checking engine.
 
 This file uses doctests all over. To test it, just run python 3 as follows:
 "python3 -m doctest main.py". The program uses syntax that is excluive of
@@ -18,6 +18,12 @@ Python 3. It will not work with standard Python 2.
 
 from collections import deque
 from abc import ABC, abstractmethod
+from enum import Enum
+
+
+class LangType(Enum):
+    NUM = 1
+    BOOL = 2
 
 
 class Env:
@@ -77,7 +83,7 @@ class Env:
             4
         """
         # TODO: Implement this method
-        return 0
+        raise NotImplementedError
 
     def set(s, var, value):
         """
@@ -93,6 +99,42 @@ class Env:
         """
         for var, value in s.env:
             print(f"{var}: {value}")
+
+    def to_dict(s):
+        d = dict()
+        for var, value in reversed(s.env):
+            d[var] = value
+        return d
+
+
+class TypeEnvErr(Exception):
+    pass
+
+
+class TypeEnv(Env):
+    @classmethod
+    def from_env(cls, env: Env):
+        d = env.to_dict()
+        type_d = dict()
+        for k, v in d.items():
+            t = type(v)
+            if t is int:
+                type_d[k] = LangType.NUM
+            elif t is bool:
+                type_d[k] = LangType.BOOL
+            else:
+                raise TypeEnvErr
+        return TypeEnv(type_d)
+
+    def set(s, var, value: LangType):
+        """
+        This method wraps the inherited set(var, value) method, making
+        sure only LangType values are accepted.
+        """
+        if type(value) is not LangType:
+            raise TypeEnvErr
+        else:
+            s.env.appendleft((var, value))
 
 
 class Inst(ABC):
@@ -133,6 +175,18 @@ class Inst(ABC):
             return None
 
 
+class InstTypeErr(Exception):
+    def __init__(s, inst: Inst, expected: LangType, found: LangType):
+        s.inst = inst
+        s.expected = expected
+        s.found = found
+        message = (
+            f"Type error in instruction {inst.ID}\n"
+            f"Expected: {expected}, found: {found}"
+        )
+        super().__init__(message)
+
+
 class Phi(Inst):
     """
     A Phi-Function is an abstract notation used to facilitate the implementation
@@ -148,7 +202,7 @@ class Phi(Inst):
     that are related by phi-functions do not have overlapping live ranges.
 
     Example:
-        >>> a = Phi("a", ["b0", "b1", "b2"])
+        >>> a = Phi("a", "b0", "b1", "b2")
         >>> e = Env()
         >>> e.set("b0", 1)
         >>> e.set("b1", 3)
@@ -156,7 +210,7 @@ class Phi(Inst):
         >>> e.get("a")
         3
 
-        >>> a = Phi("a", ["b0", "b1"])
+        >>> a = Phi("a", "b0", "b1")
         >>> e = Env()
         >>> e.set("b1", 3)
         >>> e.set("b0", 1)
@@ -167,14 +221,14 @@ class Phi(Inst):
 
     def __init__(s, dst, *args):
         s.dst = dst
-        s.args = args
+        s.args = list(args)
         super().__init__()
 
     def definition(s):
         return set([s.dst])
 
     def uses(s):
-        return set(s.args)
+        return s.args
 
     def eval(s, env):
         """
@@ -183,8 +237,8 @@ class Phi(Inst):
         occurrence of each variable in the list of uses. However, notice what
         would happen with swaps:
 
-        >>> a0 = Phi("a0", ["a1", "a0"])
-        >>> a1 = Phi("a1", ["a0", "a1"])
+        >>> a0 = Phi("a0", "a1", "a0")
+        >>> a1 = Phi("a1", "a0", "a1")
         >>> e = Env()
         >>> e.set("a0", 1)
         >>> e.set("a1", 3)
@@ -204,9 +258,99 @@ class Phi(Inst):
         """
         env.set(s.dst, env.get_from_list(s.uses()))
 
+    def type_eval(s, type_env):
+        """
+        Assume that our language does not allow for type changes in variables.
+        Thus, all arguments in a Phi-Function must belong to the same type.
+        Example:
+
+            >>> Inst.next_index = 0
+            >>> i0 = Phi("a", "b0", "b1")
+            >>> e = TypeEnv()
+            >>> e.set("b0", LangType.NUM)
+            >>> e.set("b1", LangType.BOOL)
+            >>> i0.type_eval(e)
+            Traceback (most recent call last):
+             ...
+            lang.InstTypeErr: Type error in instruction 0
+            Expected: LangType.NUM, found: LangType.BOOL
+        """
+        # TODO: implement this method
+        raise NotImplementedError
+
     def __str__(self):
         use_list = ", ".join(self.uses())
         inst_s = f"{self.ID}: {self.dst} = phi[{use_list}]"
+        pred_s = f"\n  P: {', '.join([str(inst.ID) for inst in self.preds])}"
+        next_s = f"\n  N: {self.nexts[0].ID if len(self.nexts) > 0 else ''}"
+        return inst_s + pred_s + next_s
+
+
+class ReadNum(Inst):
+    """
+    The ReadNum instruction introduces non-constant values to the program.
+    This blocking instruction requests a numerical input from the user.
+    """
+
+    def __init__(s, dst):
+        s.dst = dst
+        super().__init__()
+
+    def definition(s):
+        return {s.dst}
+
+    def uses(s):
+        return set()
+
+    def eval(s, env):
+        """
+        For simplicity, ReadNum fails with any value other than ints
+        """
+        input_value = input(f"value for {s.dst}: ")
+        if type(input_value) is not int:
+            raise InstTypeErr(s, int, type(input_value))
+        env.set(s.dst, int(input_value))
+
+    def type_eval(s, type_env):
+        type_env.set(s.dst, LangType.NUM)
+
+    def __str__(self):
+        inst_s = f"{self.ID}: {self.dst} = INPUT"
+        pred_s = f"\n  P: {', '.join([str(inst.ID) for inst in self.preds])}"
+        next_s = f"\n  N: {self.nexts[0].ID if len(self.nexts) > 0 else ''}"
+        return inst_s + pred_s + next_s
+
+
+class ReadBool(Inst):
+    """
+    The ReadNum instruction introduces non-constant values to the program.
+    This blocking instruction requests a numerical input from the user.
+    """
+
+    def __init__(s, dst):
+        s.dst = dst
+        super().__init__()
+
+    def definition(s):
+        return {s.dst}
+
+    def uses(s):
+        return set()
+
+    def eval(s, env):
+        """
+        For simplicity, ReadBool fails with any value other than bool
+        """
+        input_value = input(f"value for {s.dst}: ")
+        if type(input_value) is not bool:
+            raise InstTypeErr(s, bool, type(input_value))
+        env.set(s.dst, int(input_value))
+
+    def type_eval(s, type_env):
+        type_env.set(s.dst, LangType.BOOL)
+
+    def __str__(self):
+        inst_s = f"{self.ID}: {self.dst} = INPUT"
         pred_s = f"\n  P: {', '.join([str(inst.ID) for inst in self.preds])}"
         next_s = f"\n  N: {self.nexts[0].ID if len(self.nexts) > 0 else ''}"
         return inst_s + pred_s + next_s
@@ -223,8 +367,8 @@ class PhiBlock(Inst):
     a look into Figure 1 of that paper.
 
     Example:
-        >>> a0 = Phi("a0", ["a0", "a1"])
-        >>> a1 = Phi("a1", ["a1", "a0"])
+        >>> a0 = Phi("a0", "a0", "a1")
+        >>> a1 = Phi("a1", "a1", "a0")
         >>> aa = PhiBlock([a0, a1], [10, 31])
         >>> e = Env()
         >>> e.set("a0", 1)
@@ -233,8 +377,8 @@ class PhiBlock(Inst):
         >>> e.get("a0") - e.get("a1")
         -2
 
-        >>> a0 = Phi("a0", ["a0", "a1"])
-        >>> a1 = Phi("a1", ["a1", "a0"])
+        >>> a0 = Phi("a0", "a0", "a1")
+        >>> a1 = Phi("a1", "a1", "a0")
         >>> aa = PhiBlock([a0, a1], [10, 31])
         >>> e = Env()
         >>> e.set("a0", 1)
@@ -261,13 +405,12 @@ class PhiBlock(Inst):
             >>> a0 = Phi("a0", ["a0", "a1"])
             >>> a1 = Phi("a1", ["a1", "a0"])
             >>> aa = PhiBlock([a0, a1], [10, 31])
-            >>> sorted([phi.definition() for phi in aa.phis])
+            >>> sorted([phi.definition().pop() for phi in aa.phis])
             ['a0', 'a1']
         """
         self.phis = phis
         # TODO: implement the rest of this method
         # here...
-        # self.selectors = ...
         #########################################
         super().__init__()
 
@@ -283,7 +426,7 @@ class PhiBlock(Inst):
             >>> sorted(aa.definition())
             ['a0', 'a1']
         """
-        return [phi.definition() for phi in self.phis]
+        return [phi.definition().pop() for phi in self.phis]
 
     def uses(self):
         """
@@ -292,8 +435,8 @@ class PhiBlock(Inst):
         is here rather to help understand the structure of phi-blocks.
 
         Example:
-            >>> a0 = Phi("a0", ["a0", "x"])
-            >>> a1 = Phi("a1", ["y", "a0"])
+            >>> a0 = Phi("a0", "a0", "x")
+            >>> a1 = Phi("a1", "y", "a0")
             >>> aa = PhiBlock([a0, a1], [10, 31])
             >>> sorted(aa.uses())
             ['a0', 'a0', 'x', 'y']
@@ -303,7 +446,35 @@ class PhiBlock(Inst):
     def eval(self, env: Env, PC: int):
         # TODO: Read all the definitions
         # TODO: Assign all the uses:
-        pass
+        raise NotImplementedError
+
+    def type_eval(s, type_env):
+        """
+        To type check a block of phi-functions, just type check each phi
+        function individually. Notice that the phi-functions within a phi
+        block don't need to have the same types.
+
+        Example:
+            >>> Inst.next_index = 0
+            >>> a0 = Phi("a0", "a0", "a1")
+            >>> a1 = Phi("a1", "a1", "a0")
+            >>> aa = PhiBlock([a0, a1], [10, 31])
+            >>> e = TypeEnv({"a0": LangType.NUM, "a1": LangType.BOOL})
+            >>> aa.type_eval(e)
+            Traceback (most recent call last):
+             ...
+            lang.InstTypeErr: Type error in instruction 0
+            Expected: LangType.NUM, found: LangType.BOOL
+
+            >>> Inst.next_index = 0
+            >>> a = Phi("a0", "a1", "a2")
+            >>> b = Phi("b0", "b1", "b2")
+            >>> aa = PhiBlock([a, b], [10, 31])
+            >>> e = TypeEnv({"a1": LangType.NUM, "b1": LangType.BOOL})
+            >>> aa.type_eval(e)
+        """
+        for phi in s.phis:
+            phi.type_eval(type_env)
 
     def __str__(self):
         block_str = "\n".join([str(phi) for phi in self.phis])
@@ -359,6 +530,27 @@ class Add(BinOp):
     def eval(self, env):
         env.set(self.dst, env.get(self.src0) + env.get(self.src1))
 
+    def type_eval(s, type_env):
+        """
+        Additions will always require and result in a numerical value:
+            >>> Inst.next_index = 0
+            >>> a = Add("a", "b0", "b1")
+            >>> e = TypeEnv({"b0": LangType.NUM, "b1": LangType.BOOL})
+            >>> a.type_eval(e)
+            Traceback (most recent call last):
+             ...
+            lang.InstTypeErr: Type error in instruction 0
+            Expected: LangType.NUM, found: LangType.BOOL
+
+            >>> a = Add("a", "b0", "b1")
+            >>> e = TypeEnv({"b0": LangType.NUM, "b1": LangType.NUM})
+            >>> a.type_eval(e)
+            >>> print(e.get("a"))
+            LangType.NUM
+        """
+        # TODO: implement this method
+        raise NotImplementedError
+
     def get_opcode(self):
         return "+"
 
@@ -375,6 +567,27 @@ class Mul(BinOp):
 
     def eval(s, env):
         env.set(s.dst, env.get(s.src0) * env.get(s.src1))
+
+    def type_eval(s, type_env):
+        """
+        Multiplications will always require and result in a numerical value:
+            >>> Inst.next_index = 0
+            >>> a = Mul("a", "b0", "b1")
+            >>> e = TypeEnv({"b0": LangType.NUM, "b1": LangType.BOOL})
+            >>> a.type_eval(e)
+            Traceback (most recent call last):
+             ...
+            lang.InstTypeErr: Type error in instruction 0
+            Expected: LangType.NUM, found: LangType.BOOL
+
+            >>> a = Mul("a", "b0", "b1")
+            >>> e = TypeEnv({"b0": LangType.NUM, "b1": LangType.NUM})
+            >>> a.type_eval(e)
+            >>> print(e.get("a"))
+            LangType.NUM
+        """
+        # TODO: implement this method
+        raise NotImplementedError
 
     def get_opcode(self):
         return "*"
@@ -393,6 +606,27 @@ class Lth(BinOp):
     def eval(s, env):
         env.set(s.dst, env.get(s.src0) < env.get(s.src1))
 
+    def type_eval(s, type_env):
+        """
+        Comparisons will always require numerical values and output booleans:
+            >>> Inst.next_index = 0
+            >>> a = Lth("a", "b0", "b1")
+            >>> e = TypeEnv({"b0": LangType.NUM, "b1": LangType.BOOL})
+            >>> a.type_eval(e)
+            Traceback (most recent call last):
+             ...
+            lang.InstTypeErr: Type error in instruction 0
+            Expected: LangType.NUM, found: LangType.BOOL
+
+            >>> a = Lth("a", "b0", "b1")
+            >>> e = TypeEnv({"b0": LangType.NUM, "b1": LangType.NUM})
+            >>> a.type_eval(e)
+            >>> print(e.get("a"))
+            LangType.BOOL
+        """
+        # TODO: implement this method
+        raise NotImplementedError
+
     def get_opcode(self):
         return "<"
 
@@ -409,6 +643,27 @@ class Geq(BinOp):
 
     def eval(s, env):
         env.set(s.dst, env.get(s.src0) >= env.get(s.src1))
+
+    def type_eval(s, type_env):
+        """
+        Comparisons will always require numerical values and output booleans:
+            >>> Inst.next_index = 0
+            >>> a = Geq("a", "b0", "b1")
+            >>> e = TypeEnv({"b0": LangType.NUM, "b1": LangType.BOOL})
+            >>> a.type_eval(e)
+            Traceback (most recent call last):
+             ...
+            lang.InstTypeErr: Type error in instruction 0
+            Expected: LangType.NUM, found: LangType.BOOL
+
+            >>> a = Geq("a", "b0", "b1")
+            >>> e = TypeEnv({"b0": LangType.NUM, "b1": LangType.NUM})
+            >>> a.type_eval(e)
+            >>> print(e.get("a"))
+            LangType.BOOL
+        """
+        # TODO: implement this method
+        raise NotImplementedError
 
     def get_opcode(self):
         return ">="
@@ -434,6 +689,7 @@ class Bt(Inst):
         super().__init__()
         s.cond = cond
         s.nexts = [true_dst, false_dst]
+        s.next_iter = 1  # By default, perform no jump
         if true_dst != None:
             true_dst.preds.append(s)
         if false_dst != None:
@@ -464,6 +720,23 @@ class Bt(Inst):
             s.next_iter = 0
         else:
             s.next_iter = 1
+
+    def type_eval(s, type_env):
+        """
+        Branch instructions require boolean conditions:
+            >>> Inst.next_index = 0
+            >>> a = Add("x", "x", "x")
+            >>> m = Mul("x", "x", "x")
+            >>> b = Bt("t", a, m)
+            >>> e = TypeEnv({"t": LangType.NUM})
+            >>> b.type_eval(e)
+            Traceback (most recent call last):
+             ...
+            lang.InstTypeErr: Type error in instruction 2
+            Expected: LangType.BOOL, found: LangType.NUM
+        """
+        # TODO: implement this method
+        raise NotImplementedError
 
     def get_next(s):
         return s.nexts[s.next_iter]
@@ -500,15 +773,31 @@ def interp(instruction: Inst, environment: Env, PC=0):
         2
     """
     if instruction:
-        print("----------------------------------------------------------")
-        print(instruction)
-        environment.dump()
         if isinstance(instruction, PhiBlock):
-            # TODO: implement this part:
-            pass
+            instruction.eval(environment, PC)
         else:
-            # TODO: implement this part:
-            pass
+            instruction.eval(environment)
         return interp(instruction.get_next(), environment, instruction.ID)
     else:
         return environment
+
+
+def type_check(inst: Inst, tp_env: TypeEnv, phi_queue: list[Inst] = []):
+    """
+    This function runs a simple type checking engine on the program that is
+    headed by instruction `inst`. Types are stored in the type environment
+    `tp_env`. The function type checks the program in two phases. Normal
+    instructions are checked right away. Phi-functions are checked into two
+    moments. They are checked once, the first time they are met, in order to
+    determine their types. Then, afterwards, they are checked again, to ensure
+    that all the parameters have the same type. To perform this two-phase
+    approach, this function uses a queue of phi-functions.
+    """
+    if inst:
+        if isinstance(inst, PhiBlock) or isinstance(inst, Phi):
+            phi_queue.append(inst)
+        inst.type_eval(tp_env)
+        type_check(inst.get_next(), tp_env)
+    else:
+        for phi in phi_queue:
+            phi.type_eval(tp_env)
